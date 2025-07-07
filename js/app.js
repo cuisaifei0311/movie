@@ -1103,6 +1103,41 @@ async function showVideoEpisodesModal(id, title, sourceCode, apiUrl, year, typeN
             episodes = data.episodes;
             videoInfo = data.videoInfo || {};
         }
+        // 检查是否有detailUrl需要二次请求
+        else if (data.code === 200 && data.detailUrl && (!data.episodes || data.episodes.length === 0)) {
+            console.log('检测到detailUrl，进行二次请求:', data.detailUrl);
+            try {
+                // 使用代理请求detailUrl
+                const detailResponse = await fetch(`/proxy/${encodeURIComponent(data.detailUrl)}`);
+                const detailData = await detailResponse.json();
+                
+                console.log('二次请求结果:', detailData);
+                
+                // 处理二次请求的结果
+                if (detailData.list && detailData.list.length > 0) {
+                    const detailItem = detailData.list[0];
+                    if (detailItem.vod_play_url) {
+                        episodes = [detailItem.vod_play_url];
+                        videoInfo = {
+                            title: detailItem.vod_name || data.videoInfo?.title || title,
+                            year: detailItem.vod_year || data.videoInfo?.year || year,
+                            type: detailItem.type_name || data.videoInfo?.type || typeName,
+                            pic: detailItem.vod_pic || data.videoInfo?.cover,
+                            remarks: detailItem.vod_remarks,
+                            actor: detailItem.vod_actor,
+                            director: detailItem.vod_director,
+                            area: detailItem.vod_area,
+                            lang: detailItem.vod_lang,
+                            content: detailItem.vod_content
+                        };
+                    }
+                }
+            } catch (detailError) {
+                console.error('二次请求失败:', detailError);
+                // 如果二次请求失败，使用原始videoInfo
+                videoInfo = data.videoInfo || {};
+            }
+        }
         // 检查是否是搜索结果格式但包含播放链接
         else if ((data.code === 1 || data.code === 200) && data.list && data.list.length > 0) {
             const item = data.list[0];
