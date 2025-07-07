@@ -225,12 +225,12 @@ function initDoubanToggle() {
   if (!doubanToggle) return;
 
   //豆瓣热门默认开启关闭，两个以下。
-  const isEnabled = utils.storage.get(CONFIG.STORAGE_KEYS.ENABLED, false) === true;
+  const isEnabled = utils.storage.get(CONFIG.STORAGE_KEYS.ENABLED, true) === true;
   doubanToggle.checked = isEnabled;
 
   // 如果是首次加载且 localStorage 中没有设置过，则强制写入 true
   if (localStorage.getItem(CONFIG.STORAGE_KEYS.ENABLED) === null) {
-    utils.storage.set(CONFIG.STORAGE_KEYS.ENABLED, false);
+    utils.storage.set(CONFIG.STORAGE_KEYS.ENABLED, true);
   }
 
   const toggleBg = doubanToggle.nextElementSibling;
