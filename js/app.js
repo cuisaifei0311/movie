@@ -1094,27 +1094,59 @@ async function showVideoEpisodesModal(id, title, sourceCode, apiUrl, year, typeN
 
         hideLoading();
 
-        if (data.code !== 200 || !data.episodes || data.episodes.length === 0) {
-            let errorMessage = data.msg || (data.videoInfo && data.videoInfo.msg) || (data.list && data.list.length > 0 && data.list[0] && data.list[0].msg) || '未找到剧集信息';
+        // 处理不同的数据格式
+        let episodes = [];
+        let videoInfo = {};
+        
+        // 检查是否是标准的剧集格式
+        if (data.code === 200 && data.episodes && data.episodes.length > 0) {
+            episodes = data.episodes;
+            videoInfo = data.videoInfo || {};
+        }
+        // 检查是否是搜索结果格式但包含播放链接
+        else if ((data.code === 1 || data.code === 200) && data.list && data.list.length > 0) {
+            const item = data.list[0];
+            // 检查是否有播放链接
+            if (item.vod_play_url) {
+                // 将单个播放链接转换为episodes格式
+                episodes = [item.vod_play_url];
+                videoInfo = {
+                    title: item.vod_name || title,
+                    year: item.vod_year || year,
+                    type: item.type_name || typeName,
+                    pic: item.vod_pic,
+                    remarks: item.vod_remarks,
+                    actor: item.vod_actor,
+                    director: item.vod_director,
+                    area: item.vod_area,
+                    lang: item.vod_lang,
+                    content: item.vod_content
+                };
+            }
+        }
+        
+        // 如果仍然没有找到可播放的内容
+        if (episodes.length === 0) {
+            let errorMessage = data.msg || '未找到可播放的内容';
             showToast(errorMessage, 'warning');
             console.warn('获取剧集详情数据问题:', data, `Requested URL: ${detailApiUrl}`);
             return;
         }
 
-        AppState.set('currentEpisodes', data.episodes);
-        AppState.set('currentVideoTitle', title);
+        AppState.set('currentEpisodes', episodes);
+        AppState.set('currentVideoTitle', videoInfo.title || title);
         AppState.set('currentSourceName', selectedApi.name);
         AppState.set('currentSourceCode', sourceCode);
-        AppState.set('currentVideoYear', year);
-        AppState.set('currentVideoTypeName', typeName);
+        AppState.set('currentVideoYear', videoInfo.year || year);
+        AppState.set('currentVideoTypeName', videoInfo.type || typeName);
         AppState.set('currentVideoKey', videoKey);
 
         // ← 在这里，紧接着写入 localStorage，player.html 会读取这两项
-        localStorage.setItem('currentEpisodes', JSON.stringify(data.episodes));
-        localStorage.setItem('currentVideoTitle', title);
+        localStorage.setItem('currentEpisodes', JSON.stringify(episodes));
+        localStorage.setItem('currentVideoTitle', videoInfo.title || title);
 
-        const episodeButtonsHtml = renderEpisodeButtons(data.episodes, title, sourceCode, selectedApi.name);
-        showModal(episodeButtonsHtml, `${title} (${selectedApi.name})`);
+        const episodeButtonsHtml = renderEpisodeButtons(episodes, videoInfo.title || title, sourceCode, selectedApi.name);
+        showModal(episodeButtonsHtml, `${videoInfo.title || title} (${selectedApi.name})`);
 
     } catch (error) {
         hideLoading();
@@ -1131,26 +1163,36 @@ function renderEpisodeButtons(episodes, videoTitle, sourceCode, sourceName) {
     const typeName = AppState.get('currentVideoTypeName') || '';
     const videoKey = AppState.get('currentVideoKey') || '';
 
+    // 判断是否为单集内容
+    const isSingleEpisode = episodes.length === 1;
+    const episodeLabel = isSingleEpisode ? '播放' : '第';
+
     let html = `
     <div class="mb-4 flex justify-end items-center space-x-2">
-        <div class="text-sm text-gray-400 mr-auto">共 ${episodes.length} 集</div>
+        <div class="text-sm text-gray-400 mr-auto">${isSingleEpisode ? '单集视频' : `共 ${episodes.length} 集`}</div>
         <button onclick="copyLinks()"
                 title="复制所有剧集链接"
                 class="p-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
             </svg>
-        </button>
+        </button>`;
 
+    // 只有多集时才显示排序按钮
+    if (!isSingleEpisode) {
+        html += `
         <button id="toggleEpisodeOrderBtn" onclick="toggleEpisodeOrderUI()" 
                 title="${currentReversedState ? '切换为正序排列' : '切换为倒序排列'}" /* 添加 title 提示 */
                 class="p-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex items-center justify-center">
             <svg id="orderIcon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="transition: transform 0.3s ease;">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
             </svg>
-        </button>
+        </button>`;
+    }
+
+    html += `
     </div>
-    <div id="episodeButtonsContainer" class="grid grid-cols-3 xs:grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">`;
+    <div id="episodeButtonsContainer" class="${isSingleEpisode ? 'flex justify-center' : 'grid grid-cols-3 xs:grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2'}">`;
 
     const displayEpisodes = currentReversedState ? [...episodes].reverse() : [...episodes];
 
@@ -1158,15 +1200,21 @@ function renderEpisodeButtons(episodes, videoTitle, sourceCode, sourceName) {
         const originalIndex = currentReversedState ? (episodes.length - 1 - displayIndex) : displayIndex;
         const safeVideoTitle = encodeURIComponent(videoTitle);
         const safeSourceName = encodeURIComponent(sourceName);
+        
+        // 根据是否为单集调整按钮文本和样式
+        const buttonText = isSingleEpisode ? '播放视频' : `第 ${originalIndex + 1} 集`;
+        const buttonClass = isSingleEpisode ? 
+            'episode-btn px-6 py-3 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-base font-medium transition-colors' :
+            'episode-btn px-2 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded text-xs sm:text-sm transition-colors truncate';
 
         html += `
         <button 
             onclick="playVideo('${episodeUrl}', decodeURIComponent('${safeVideoTitle}'), ${originalIndex}, decodeURIComponent('${safeSourceName}'), '${sourceCode}', '${vodId}', '${year}', '${typeName}', '${videoKey}')" 
-            class="episode-btn px-2 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded text-xs sm:text-sm transition-colors truncate"
+            class="${buttonClass}"
             data-index="${originalIndex}"
-            title="第 ${originalIndex + 1} 集" 
+            title="${isSingleEpisode ? '播放视频' : `第 ${originalIndex + 1} 集`}" 
         >
-            第 ${originalIndex + 1} 集      
+            ${buttonText}
         </button>`;
     });
     html += '</div>';
